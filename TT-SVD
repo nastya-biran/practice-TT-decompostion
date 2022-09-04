@@ -1,0 +1,39 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorly as tl
+import math
+from numpy.linalg import matrix_rank
+import t3f
+import tensorly.random
+
+
+def my_tt_svd(A, needed_ranks,  e):
+    d = tl.ndim(A)
+    delta = e / d * tl.norm(A, 2)
+    C = A.copy()
+    ranks = [1]
+    G = []
+    num_elem = 0
+    for k in range(0, d - 1):
+        p = ranks[-1] * A.shape[k]
+        C = tl.reshape(C, (p, math.prod(tl.shape(C)) // p))
+        ranks.append(min(matrix_rank(C, delta), needed_ranks[k]))
+        U, S, V = tl.partial_svd(C, ranks[-1])
+        G.append(tl.reshape(U, (ranks[len(ranks) - 2], A.shape[k], ranks[-1])))
+        num_elem += math.prod(tl.shape(G[-1]))
+        S = np.diag(S)
+        C = S @ V
+    G.append(tl.reshape(C, (tl.shape(C)[0], tl.shape(C)[1], 1)))
+    num_elem += math.prod(tl.shape(G[-1]))
+    return num_elem, np.linalg.norm(A - tl.tt_to_tensor(G)) / np.linalg.norm(A)
+
+
+def library_tt_svd(A, needed_ranks, e):
+    A_tt = t3f.to_tt_tensor(A, needed_ranks, e)
+    tt_ranks = A_tt.get_tt_ranks()
+    lib_num_elem = 0
+    for i in range(A_tt.ndims()):
+        lib_num_elem += tt_ranks[i] * tl.shape(A)[i] * tt_ranks[i + 1]
+    return lib_num_elem, np.linalg.norm(A - t3f.full(A_tt))/ np.linalg.norm(A)
+
+
