@@ -1,0 +1,45 @@
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
+import math
+from numpy.linalg import matrix_rank
+import t3f
+import copy
+import tensorly as tl
+import tensorly.random
+import tensorly.tenalg
+
+
+def my_round(A, needed_ranks, e):
+    d = A.ndims()
+    A_copy = copy.deepcopy(A)
+    A_copy = t3f.orthogonalize_tt_cores(A_copy, left_to_right=False)
+    A_copy = list(A_copy.tt_cores)
+    A = tl.tt_to_tensor(A.tt_cores)
+    delta = e / d * tl.norm(A, 2)
+    for k in range(d - 1):
+        r_k1 = tl.shape(A_copy[k])[0]
+        n_k = tl.shape(A_copy[k])[1]
+        r_k2 = tl.shape(A_copy[k])[2]
+        A_copy[k] = tl.reshape(A_copy[k], (r_k1 * n_k, r_k2))
+        r = min(matrix_rank(A_copy[k], delta), needed_ranks[k + 1])
+        A_copy[k], S, V = tl.partial_svd(A_copy[k], r)
+        S = np.diag(S)
+        X = (V.T @ S).T
+        A_copy[k + 1] = tl.tenalg.mode_dot(A_copy[k + 1], X, 0)
+        A_copy[k] = tl.reshape(A_copy[k], (r_k1, n_k, r))
+    my_num_elem = 0
+    for i in range(d):
+        my_num_elem += tl.shape(A_copy[i])[0] * tl.shape(A_copy[i])[1] * tl.shape(A_copy[i])[2]
+    return my_num_elem, np.linalg.norm(A - tl.tt_to_tensor(A_copy)) / np.linalg.norm(A)
+
+
+def library_round(A, needed_ranks, e):
+    A_copy2 = copy.deepcopy(A)
+    A = tl.tt_to_tensor(A.tt_cores)
+    A_copy2 = t3f.round(A_copy2, needed_ranks, e)
+    tt_ranks = A_copy2.get_tt_ranks()
+    lib_num_elem = 0
+    for i in range(A_copy2.ndims()):
+        lib_num_elem += tt_ranks[i] * A_copy2.get_shape()[i] * tt_ranks[i + 1]
+    return lib_num_elem, np.linalg.norm(A - t3f.full(A_copy2))/ np.linalg.norm(A)
